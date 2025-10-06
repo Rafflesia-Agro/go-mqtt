@@ -1,0 +1,173 @@
+openapi: 3.0.0
+info:
+  title: Device Control API
+  description: API untuk mengontrol dan memonitor status perangkat keras di kandang (coop) melalui MQTT.
+  version: 1.0.0
+servers:
+  - url: https://device.rafflesiaagro.com
+    description: Production Server
+paths:
+  /health:
+    get:
+      summary: Check Service Health
+      description: Memeriksa status layanan dan koneksi ke broker MQTT.
+      tags:
+        - Status
+      operationId: getHealth
+      responses:
+        '200':
+          description: Layanan berjalan dengan baik.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  mqtt_online:
+                    type: boolean
+                    example: true
+  /coops/{id}/state:
+    post:
+      summary: Update Hardware State
+      description: Mengirim perintah untuk memperbarui status satu perangkat keras. Endpoint ini memerlukan otentikasi JWT.
+      tags:
+        - Coops
+      operationId: updateCoopHardwareState
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID unik dari kandang (coop).
+          schema:
+            type: string
+            example: '123'
+      requestBody:
+        description: Objek tunggal yang berisi pembaruan status untuk satu perangkat keras.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HardwareState'
+      # BARU: Terapkan skema keamanan pada endpoint ini
+      security:
+        - bearerAuth: []
+      responses:
+        '202':
+          description: Perintah berhasil diterima dan dikirim ke broker.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: state command for specific hardware sent
+        '400':
+          description: Bad Request. Payload JSON tidak valid atau gagal validasi.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        # BARU: Tambahkan respons 401 Unauthorized
+        '401':
+          description: Unauthorized. Token otentikasi tidak valid atau tidak ada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error. Terjadi kegagalan saat memproses perintah di server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  # BARU: Definisikan skema keamanan untuk JWT Bearer
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Masukkan token JWT dengan format 'Bearer {token}'"
+  schemas:
+    TimeSchedule:
+      type: object
+      required:
+        - order
+        - time_on
+        - time_off
+      properties:
+        order:
+          type: integer
+          description: Urutan eksekusi jadwal, harus unik.
+          example: 1
+        time_on:
+          type: string
+          description: Waktu menyala dalam format HH:MM.
+          example: '06:00'
+          pattern: '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'
+        time_off:
+          type: string
+          description: Waktu mati dalam format HH:MM.
+          example: '18:00'
+          pattern: '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'
+    HardwareMeta:
+      type: object
+      nullable: true
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          description: Mode operasi perangkat keras.
+          enum:
+            - auto
+            - manual
+          example: auto
+        temperature_min:
+          type: number
+          format: float
+          description: Batas suhu minimum.
+          example: 30.5
+        temperature_max:
+          type: number
+          format: float
+          description: Batas suhu maksimum.
+          example: 33.0
+        schedules:
+          type: array
+          description: Daftar jadwal ON/OFF.
+          items:
+            $ref: '#/components/schemas/TimeSchedule'
+    HardwareState:
+      type: object
+      description: Mewakili status lengkap dari satu perangkat keras.
+      required:
+        - hardware
+        - state
+      properties:
+        hardware:
+          type: string
+          description: "Nama unik perangkat keras (contoh: 'fan', 'lamp', 'water')."
+          example: fan
+        state:
+          type: boolean
+          description: Status perangkat keras (true = ON, false = OFF).
+          example: true
+        meta:
+          description: Metadata tambahan untuk konfigurasi mode 'auto'. Bisa null.
+          $ref: '#/components/schemas/HardwareMeta'
+    Error:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Unauthorized"

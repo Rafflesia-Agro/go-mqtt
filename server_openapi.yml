@@ -1,0 +1,106 @@
+openapi: 3.0.0
+info:
+  title: Aranus Farm API
+  description: API Documentation for Aranus Farm Application
+  version: 1.0.0
+servers:
+  - url: https://api.rafflesiaagro.com
+    description: API Server
+paths:
+  /api/login:
+    post:
+      tags:
+        - Auth
+      summary: Login pengguna
+      description: Endpoint untuk otentikasi pengguna dan mendapatkan token JWT. Pengguna bisa login menggunakan email atau username.
+      operationId: 222b2625838e3c57e017987f73598fda
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  description: Email atau username pengguna.
+                  type: string
+                  example: farmerdev@example.com
+                password:
+                  description: Kata sandi pengguna.
+                  type: string
+                  example: password
+              type: object
+      responses:
+        '200':
+          description: Otentikasi berhasil, token JWT dikembalikan.
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: User login successfully
+                  token:
+                    description: Token JWT untuk otentikasi berikutnya.
+                    type: string
+                type: object
+        '401':
+          description: Gagal otentikasi, kata sandi salah.
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    type: integer
+                    example: 401
+                  message:
+                    type: string
+                    example: Password yang Anda masukkan salah. Silakan coba lagi.
+                type: object
+        '403':
+          description: Email belum diverifikasi.
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    type: integer
+                    example: 403
+                  message:
+                    type: string
+                    example: Email belum diverifikasi
+                  token:
+                    description: Token JWT, bisa digunakan untuk mengirim ulang verifikasi.
+                    type: string
+                type: object
+        '404':
+          description: Akun tidak ditemukan.
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    type: integer
+                    example: 404
+                  message:
+                    type: string
+                    example: Akun tidak ditemukan. Pastikan Anda telah memasukkan email atau username yang benar.
+                type: object
+        '422':
+          description: Kesalahan validasi input.
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    type: integer
+                    example: 422
+                  message:
+                    type: string
+                    example: Email atau username harus diisi.
+                type: object
