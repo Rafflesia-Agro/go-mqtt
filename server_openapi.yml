@@ -26,11 +26,12 @@ paths:
                 email:
                   description: Email atau username pengguna.
                   type: string
-                  example: farmerdev@example.com
+                  example: admin@aranus.com
                 password:
                   description: Kata sandi pengguna.
                   type: string
-                  example: password
+                  # DIUBAH: Contoh kata sandi diperbarui
+                  example: '12345678'
               type: object
       responses:
         '200':

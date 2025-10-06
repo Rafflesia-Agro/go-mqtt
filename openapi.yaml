@@ -93,7 +93,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: "Masukkan token JWT dengan format 'Bearer {token}'"
+      description: "Masukkan token JWT"
   schemas:
     TimeSchedule:
       type: object
