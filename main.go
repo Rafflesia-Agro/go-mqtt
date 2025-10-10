@@ -50,10 +50,68 @@ type HardwareState struct {
 	Meta     *HardwareMeta `json:"meta"`
 }
 
+// Partial update structs for flexible requests
+type PartialHardwareMeta struct {
+	Mode           *string          `json:"mode,omitempty"`
+	TemperatureMin *float64         `json:"temperature_min,omitempty"`
+	TemperatureMax *float64         `json:"temperature_max,omitempty"`
+	Schedules      *[]TimeSchedule  `json:"schedules,omitempty"`
+}
+
+type PartialHardwareState struct {
+	Hardware string                `json:"hardware"`
+	State    *bool                 `json:"state,omitempty"`
+	Meta     *PartialHardwareMeta  `json:"meta,omitempty"`
+}
+
 // HAPUS STRUCT INI: StatePayload tidak lagi digunakan.
 // type StatePayload struct {
 // 	HardwareStates []HardwareState `json:"hardware_state"`
 // }
+
+// mergePartialUpdates merges partial updates into an existing hardware state
+func mergePartialUpdates(existing HardwareState, partial PartialHardwareState) HardwareState {
+	result := existing
+
+	// Update hardware if provided (though this should match the URL param)
+	if partial.Hardware != "" {
+		result.Hardware = partial.Hardware
+	}
+
+	// Update state if provided
+	if partial.State != nil {
+		result.State = *partial.State
+	}
+
+	// Handle meta updates
+	if partial.Meta != nil {
+		if result.Meta == nil {
+			result.Meta = &HardwareMeta{}
+		}
+
+		// Update mode if provided
+		if partial.Meta.Mode != nil {
+			result.Meta.Mode = *partial.Meta.Mode
+		}
+
+		// Update temperature min if provided
+		if partial.Meta.TemperatureMin != nil {
+			result.Meta.TemperatureMin = partial.Meta.TemperatureMin
+		}
+
+		// Update temperature max if provided
+		if partial.Meta.TemperatureMax != nil {
+			result.Meta.TemperatureMax = partial.Meta.TemperatureMax
+		}
+
+		// Update schedules if provided
+		if partial.Meta.Schedules != nil {
+			result.Meta.Schedules = *partial.Meta.Schedules
+		}
+	}
+
+	return result
+}
 
 func validateSchedules(schedules []TimeSchedule) error {
 	if len(schedules) <= 1 {
@@ -265,49 +323,167 @@ func SetupRouter(client mqtt.Client, redisClient *redis.Client, tokenAuth *jwtau
 
 		r.Use(CoopAccessMiddleware(store))
 
+		r.Get("/coops/{id}/state", func(w http.ResponseWriter, r *http.Request) {
+			coopID := chi.URLParam(r, "id")
+
+			// Use Redis SCAN to find all hardware state keys for this coop
+			pattern := fmt.Sprintf("hardware_state_%s_*", coopID)
+			var hardwareStates []HardwareState
+			var keys []string
+
+			iter := redisClient.Scan(r.Context(), 0, pattern, 0).Iterator()
+			for iter.Next(r.Context()) {
+				keys = append(keys, iter.Val())
+			}
+			if err := iter.Err(); err != nil {
+				slog.Error("Failed to scan Redis keys", "error", err, "pattern", pattern)
+				HTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to retrieve hardware states from Redis"))
+				return
+			}
+
+			// Retrieve values for all found keys
+			for _, key := range keys {
+				val, err := redisClient.Get(r.Context(), key).Result()
+				if err == redis.Nil {
+					continue // Skip if key doesn't exist (might have expired)
+				} else if err != nil {
+					slog.Error("Failed to get Redis value", "error", err, "key", key)
+					continue
+				}
+
+				var state HardwareState
+				if err := json.Unmarshal([]byte(val), &state); err != nil {
+					slog.Error("Failed to unmarshal hardware state", "error", err, "key", key)
+					continue
+				}
+				hardwareStates = append(hardwareStates, state)
+			}
+
+			slog.Info("Retrieved hardware states from Redis", "coop_id", coopID, "count", len(hardwareStates))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"data": map[string]any{
+					"coop_id":         coopID,
+					"hardware_states": hardwareStates,
+					"count":           len(hardwareStates),
+				},
+			})
+		})
+
 		r.Post("/coops/{id}/state", func(w http.ResponseWriter, r *http.Request) {
 			coopID := chi.URLParam(r, "id")
 
-			var command HardwareState
-			if err := json.NewDecoder(r.Body).Decode(&command); err != nil {
-				HTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid JSON for state command: %w", err))
-				return
-			}
-			if command.Hardware == "" {
-				HTTPError(w, http.StatusBadRequest, errors.New("field 'hardware' is required"))
-				return
-			}
-			if command.Meta != nil && len(command.Meta.Schedules) > 0 {
-				if err := validateSchedules(command.Meta.Schedules); err != nil {
-					HTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid schedules for hardware '%s': %w", command.Hardware, err))
+			// Set body size limit
+			r.Body = http.MaxBytesReader(w, r.Body, 1048576) // 1MB limit
+			decoder := json.NewDecoder(r.Body)
+
+			// First attempt to decode as partial update
+			var partialUpdate PartialHardwareState
+			partialErr := decoder.Decode(&partialUpdate)
+
+			var finalState HardwareState
+			var hardwareName string
+
+			if partialErr == nil && partialUpdate.Hardware != "" {
+				// This is a partial update - fetch existing state and merge
+				hardwareName = partialUpdate.Hardware
+				redisKey := fmt.Sprintf("hardware_state_%s_%s", coopID, hardwareName)
+
+				// Get existing state from Redis
+				existingVal, err := redisClient.Get(r.Context(), redisKey).Result()
+				if err == redis.Nil {
+					// No existing state, create new one with defaults
+					finalState = HardwareState{
+						Hardware: hardwareName,
+						State:    false, // default
+						Meta:     nil,
+					}
+				} else if err != nil {
+					HTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to retrieve existing state from Redis: %w", err))
+					return
+				} else {
+					// Unmarshal existing state
+					if err := json.Unmarshal([]byte(existingVal), &finalState); err != nil {
+						slog.Error("Failed to unmarshal existing hardware state", "error", err, "key", redisKey)
+						// Start with a fresh state if corrupted
+						finalState = HardwareState{
+							Hardware: hardwareName,
+							State:    false,
+							Meta:     nil,
+						}
+					}
+				}
+
+				// Validate schedules if provided in partial update
+				if partialUpdate.Meta != nil && partialUpdate.Meta.Schedules != nil {
+					if err := validateSchedules(*partialUpdate.Meta.Schedules); err != nil {
+						HTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid schedules for hardware '%s': %w", hardwareName, err))
+						return
+					}
+				}
+
+				// Merge partial updates
+				finalState = mergePartialUpdates(finalState, partialUpdate)
+
+			} else {
+				// This is a full state update (backward compatibility)
+				decoder = json.NewDecoder(r.Body) // Reset decoder
+				var fullCommand HardwareState
+				if err := decoder.Decode(&fullCommand); err != nil {
+					HTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid JSON for state command: %w", err))
 					return
 				}
+				if fullCommand.Hardware == "" {
+					HTTPError(w, http.StatusBadRequest, errors.New("field 'hardware' is required"))
+					return
+				}
+				if fullCommand.Meta != nil && len(fullCommand.Meta.Schedules) > 0 {
+					if err := validateSchedules(fullCommand.Meta.Schedules); err != nil {
+						HTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid schedules for hardware '%s': %w", fullCommand.Hardware, err))
+						return
+					}
+				}
+				finalState = fullCommand
+				hardwareName = fullCommand.Hardware
 			}
 
-			payload, err := json.Marshal(command)
+			// Save the final merged state to Redis
+			payload, err := json.Marshal(finalState)
 			if err != nil {
 				HTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal state command: %w", err))
 				return
 			}
 
-			redisKey := fmt.Sprintf("hardware_state_%s_%s", coopID, command.Hardware)
+			redisKey := fmt.Sprintf("hardware_state_%s_%s", coopID, hardwareName)
 			err = redisClient.Set(r.Context(), redisKey, payload, 0).Err()
 			if err != nil {
 				slog.Error("Failed to save state to Redis", "error", err, "key", redisKey)
-			} else {
-				slog.Info("Coop hardware state saved to Redis", "key", redisKey)
+				HTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to save state to Redis"))
+				return
 			}
 
+			slog.Info("Coop hardware state saved to Redis", "key", redisKey, "hardware", hardwareName)
+
+			// Publish to MQTT
 			topic := fmt.Sprintf("coops/%s/state", coopID)
 			if err := broker.MqttPublish(client, topic, payload, 1, false); err != nil {
 				HTTPError(w, http.StatusInternalServerError, err)
 				return
 			}
 
-			slog.Info("Coop state published to MQTT", "coop_id", coopID, "hardware", command.Hardware, "topic", topic)
+			slog.Info("Coop state published to MQTT", "coop_id", coopID, "hardware", hardwareName, "topic", topic)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "message": "state command for specific hardware sent"})
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"message": "hardware state updated successfully",
+				"data": map[string]any{
+					"hardware": hardwareName,
+					"coop_id":  coopID,
+				},
+			})
 		})
 	})
 

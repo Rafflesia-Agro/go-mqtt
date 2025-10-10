@@ -29,9 +29,73 @@ paths:
                     type: boolean
                     example: true
   /coops/{id}/state:
+    get:
+      summary: Get All Hardware States
+      description: Mengambil semua status perangkat keras untuk kandang tertentu dari Redis. Endpoint ini memerlukan otentikasi JWT.
+      tags:
+        - Coops
+      operationId: getCoopHardwareStates
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID unik dari kandang (coop).
+          schema:
+            type: string
+            example: '123'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Berhasil mengambil semua status perangkat keras.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      coop_id:
+                        type: string
+                        example: '123'
+                      hardware_states:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/HardwareState'
+                      count:
+                        type: integer
+                        example: 3
+        '401':
+          description: Unauthorized. Token otentikasi tidak valid atau tidak ada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden. Pengguna tidak memiliki akses ke kandang ini.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not Found. Kandang tidak ditemukan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error. Terjadi kesalahan saat mengambil data dari Redis.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       summary: Update Hardware State
-      description: Mengirim perintah untuk memperbarui status satu perangkat keras. Endpoint ini memerlukan otentikasi JWT.
+      description: Mengirim perintah untuk memperbarui status satu perangkat keras. Mendukung pembaruan penuh dan parsial. Endpoint ini memerlukan otentikasi JWT.
       tags:
         - Coops
       operationId: updateCoopHardwareState
@@ -44,12 +108,46 @@ paths:
             type: string
             example: '123'
       requestBody:
-        description: Objek tunggal yang berisi pembaruan status untuk satu perangkat keras.
+        description: Objek tunggal yang berisi pembaruan status untuk satu perangkat keras. Bisa berupa pembaruan penuh (HardwareState) atau parsial (PartialHardwareState).
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/HardwareState'
+              oneOf:
+                - $ref: '#/components/schemas/HardwareState'
+                - $ref: '#/components/schemas/PartialHardwareState'
+            examples:
+              full_update:
+                summary: Pembaruan penuh
+                value:
+                  hardware: "fan1"
+                  state: true
+                  meta:
+                    mode: "auto"
+                    temperature_min: 25.0
+                    temperature_max: 30.0
+                    schedules:
+                      - order: 1
+                        time_on: "06:00"
+                        time_off: "18:00"
+              partial_state:
+                summary: Pembaruan parsial - hanya state
+                value:
+                  hardware: "fan1"
+                  state: false
+              partial_mode:
+                summary: Pembaruan parsial - hanya mode
+                value:
+                  hardware: "fan1"
+                  meta:
+                    mode: "manual"
+              partial_temperature:
+                summary: Pembaruan parsial - hanya suhu
+                value:
+                  hardware: "heater1"
+                  meta:
+                    temperature_min: 22.0
+                    temperature_max: 27.0
       # BARU: Terapkan skema keamanan pada endpoint ini
       security:
         - bearerAuth: []
@@ -162,6 +260,49 @@ components:
         meta:
           description: Metadata tambahan untuk konfigurasi mode 'auto'. Bisa null.
           $ref: '#/components/schemas/HardwareMeta'
+    PartialHardwareMeta:
+      type: object
+      description: Metadata parsial untuk pembaruan parsial. Semua field opsional.
+      properties:
+        mode:
+          type: string
+          description: Mode operasi perangkat keras.
+          enum:
+            - auto
+            - manual
+          example: auto
+        temperature_min:
+          type: number
+          format: float
+          description: Batas suhu minimum.
+          example: 30.5
+        temperature_max:
+          type: number
+          format: float
+          description: Batas suhu maksimum.
+          example: 33.0
+        schedules:
+          type: array
+          description: Daftar jadwal ON/OFF.
+          items:
+            $ref: '#/components/schemas/TimeSchedule'
+    PartialHardwareState:
+      type: object
+      description: Mewakili pembaruan parsial untuk satu perangkat keras. Field yang tidak disertakan tidak akan diubah.
+      required:
+        - hardware
+      properties:
+        hardware:
+          type: string
+          description: "Nama unik perangkat keras (contoh: 'fan', 'lamp', 'water')."
+          example: fan
+        state:
+          type: boolean
+          description: Status perangkat keras (true = ON, false = OFF). Opsional.
+          example: true
+        meta:
+          description: Metadata parsial untuk konfigurasi mode 'auto'. Bisa null.
+          $ref: '#/components/schemas/PartialHardwareMeta'
     Error:
       type: object
       properties:
