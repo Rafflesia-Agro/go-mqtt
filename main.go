@@ -30,6 +30,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// GetJakartaTime returns current time in Asia/Jakarta timezone
+func GetJakartaTime() time.Time {
+	jakartaLocation, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		slog.Error("Failed to load Asia/Jakarta timezone, using UTC", "error", err)
+		return time.Now().UTC()
+	}
+	return time.Now().In(jakartaLocation)
+}
+
 // --- Structs for Hardware State Command (HTTP Input) ---
 type TimeSchedule struct {
 	Order   int    `json:"order"`
@@ -509,14 +519,7 @@ func SetupRouter(client mqtt.Client, redisClient *redis.Client, tokenAuth *jwtau
 			telemetry := broker.TelemetryMessage{
 				CoopID:    coopIDStr,
 				Data:      sensorData,
-				Timestamp: func() time.Time {
-			jakartaLocation, err := time.LoadLocation("Asia/Jakarta")
-			if err != nil {
-				slog.Error("Failed to load Asia/Jakarta timezone, using UTC", "error", err)
-				return time.Now().UTC()
-			}
-			return time.Now().In(jakartaLocation)
-		}(),
+				Timestamp: GetJakartaTime(),
 			}
 
 			// Load sensor types untuk validasi

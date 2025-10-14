@@ -50,7 +50,7 @@ type PostgresStore struct {
 
 // NewPostgresStore initializes the database connection pool and the store.
 func NewPostgresStore(jobChan chan SensorReading, cfg DBConfig) (*PostgresStore, error) {
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC",
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=Asia/Jakarta",
 		cfg.DBHost,
 		cfg.DBPort,
 		cfg.DBUsername,
@@ -67,8 +67,8 @@ func NewPostgresStore(jobChan chan SensorReading, cfg DBConfig) (*PostgresStore,
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// Set session timezone to UTC
-	if _, err := pool.Exec(context.Background(), "SET TIME ZONE 'UTC'"); err != nil {
+	// Set session timezone to Asia/Jakarta
+	if _, err := pool.Exec(context.Background(), "SET TIME ZONE 'Asia/Jakarta'"); err != nil {
 		return nil, fmt.Errorf("failed to set timezone: %w", err)
 	}
 
@@ -223,7 +223,7 @@ func batchInsert(pool *pgxpool.Pool, readings []SensorReading) error {
 		return err
 	}
 
-	slog.Info("Successfully inserted batch", "rows", len(readings), "timezone", "UTC")
+	slog.Info("Successfully inserted batch", "rows", len(readings), "timezone", "Asia/Jakarta")
 	return nil
 }
 
