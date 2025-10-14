@@ -32,14 +32,9 @@ type SensorReading struct {
 	Timestamp    time.Time
 }
 
-// GetJakartaTime returns current time in Asia/Jakarta timezone
-func GetJakartaTime() time.Time {
-	jakartaLocation, err := time.LoadLocation("Asia/Jakarta")
-	if err != nil {
-		slog.Error("Failed to load Asia/Jakarta timezone, using UTC", "error", err)
-		return time.Now().UTC()
-	}
-	return time.Now().In(jakartaLocation)
+// GetUTCTime returns current time in UTC timezone
+func GetUTCTime() time.Time {
+	return time.Now().UTC()
 }
 
 // DBConfig defines the required fields for DB connection.
@@ -55,7 +50,7 @@ type PostgresStore struct {
 
 // NewPostgresStore initializes the database connection pool and the store.
 func NewPostgresStore(jobChan chan SensorReading, cfg DBConfig) (*PostgresStore, error) {
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=Asia/Jakarta",
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC",
 		cfg.DBHost,
 		cfg.DBPort,
 		cfg.DBUsername,
@@ -72,8 +67,8 @@ func NewPostgresStore(jobChan chan SensorReading, cfg DBConfig) (*PostgresStore,
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// Set session timezone to Asia/Jakarta
-	if _, err := pool.Exec(context.Background(), "SET TIME ZONE 'Asia/Jakarta'"); err != nil {
+	// Set session timezone to UTC
+	if _, err := pool.Exec(context.Background(), "SET TIME ZONE 'UTC'"); err != nil {
 		return nil, fmt.Errorf("failed to set timezone: %w", err)
 	}
 
@@ -211,12 +206,12 @@ func batchInsert(pool *pgxpool.Pool, readings []SensorReading) error {
 		return nil
 	}
 
-	// Get current Jakarta time for created_at and updated_at
-	jakartaTime := GetJakartaTime()
+	// Get current UTC time for created_at and updated_at
+	utcTime := GetUTCTime()
 
 	rows := make([][]interface{}, len(readings))
 	for i, r := range readings {
-		rows[i] = []interface{}{r.Value, r.SensorTypeID, r.CoopID, jakartaTime, jakartaTime}
+		rows[i] = []interface{}{r.Value, r.SensorTypeID, r.CoopID, utcTime, utcTime}
 	}
 
 	_, err := pool.CopyFrom(
@@ -231,7 +226,7 @@ func batchInsert(pool *pgxpool.Pool, readings []SensorReading) error {
 		return err
 	}
 
-	slog.Info("Successfully inserted batch", "rows", len(readings), "timezone", "Asia/Jakarta")
+	slog.Info("Successfully inserted batch", "rows", len(readings), "timezone", "UTC")
 	return nil
 }
 

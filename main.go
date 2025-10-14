@@ -509,7 +509,7 @@ func SetupRouter(client mqtt.Client, redisClient *redis.Client, tokenAuth *jwtau
 			telemetry := broker.TelemetryMessage{
 				CoopID:    coopIDStr,
 				Data:      sensorData,
-				Timestamp: broker.GetJakartaTime(),
+				Timestamp: broker.GetUTCTime(),
 			}
 
 			// Load sensor types untuk validasi
