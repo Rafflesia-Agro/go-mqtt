@@ -485,6 +485,62 @@ func SetupRouter(client mqtt.Client, redisClient *redis.Client, tokenAuth *jwtau
 				},
 			})
 		})
+
+		// Dummy endpoint untuk testing sensor data tanpa MQTT
+		r.Post("/coops/{id}/test-sensor", func(w http.ResponseWriter, r *http.Request) {
+			coopIDStr := chi.URLParam(r, "id")
+			_, err := strconv.ParseInt(coopIDStr, 10, 64)
+			if err != nil {
+				HTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid coop ID format: %w", err))
+				return
+			}
+
+			// Parse JSON body untuk sensor data
+			r.Body = http.MaxBytesReader(w, r.Body, 1048576) // 1MB limit
+			decoder := json.NewDecoder(r.Body)
+
+			var sensorData map[string]interface{}
+			if err := decoder.Decode(&sensorData); err != nil {
+				HTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid JSON payload: %w", err))
+				return
+			}
+
+			// Buat dummy telemetry message
+			telemetry := broker.TelemetryMessage{
+				CoopID:    coopIDStr,
+				Data:      sensorData,
+				Timestamp: broker.GetJakartaTime(),
+			}
+
+			// Load sensor types untuk validasi
+			currentSensorTypes, err := database.LoadSensorTypes(store.Pool)
+			if err != nil {
+				slog.Error("Failed to load sensor types", "error", err)
+				HTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to load sensor types: %w", err))
+				return
+			}
+
+			// Simpan ke database menggunakan method yang sama dengan MQTT
+			if err := store.Save(telemetry, currentSensorTypes); err != nil {
+				slog.Error("Failed to save test sensor data", "error", err, "coop_id", coopIDStr)
+				HTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to save sensor data: %w", err))
+				return
+			}
+
+			slog.Info("Test sensor data saved successfully", "coop_id", coopIDStr, "data_count", len(sensorData))
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"message": "test sensor data saved successfully",
+				"data": map[string]any{
+					"coop_id":      coopIDStr,
+					"sensor_count": len(sensorData),
+					"timestamp":    telemetry.Timestamp.Format(time.RFC3339),
+				},
+			})
+		})
 	})
 
 	return r

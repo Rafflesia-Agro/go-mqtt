@@ -184,6 +184,88 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /coops/{id}/test-sensor:
+    post:
+      summary: Test Sensor Data Storage
+      description: Endpoint untuk testing penyimpanan data sensor tanpa menggunakan MQTT. Endpoint ini memerlukan otentikasi JWT.
+      tags:
+        - Testing
+      operationId: testSensorData
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID unik dari kandang (coop).
+          schema:
+            type: string
+            example: '123'
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: Data sensor yang akan disimpan. Field names harus sesuai dengan yang ada di tabel sensor_types.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: number
+                format: float
+              example:
+                temperature: 28.5
+                humidity: 75.2
+                light: 500
+      responses:
+        '201':
+          description: Data sensor berhasil disimpan.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "test sensor data saved successfully"
+                  data:
+                    type: object
+                    properties:
+                      coop_id:
+                        type: string
+                        example: '123'
+                      sensor_count:
+                        type: integer
+                        example: 4
+                      timestamp:
+                        type: string
+                        format: date-time
+                        example: "2024-01-15T10:30:00+07:00"
+        '400':
+          description: Bad Request. Format JSON tidak valid atau coop ID tidak valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized. Token otentikasi tidak valid atau tidak ada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden. Pengguna tidak memiliki akses ke kandang ini.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error. Terjadi kesalahan saat menyimpan data sensor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   # BARU: Definisikan skema keamanan untuk JWT Bearer
   securitySchemes:
