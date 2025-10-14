@@ -11,11 +11,6 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-// GetUTCTime returns current time in UTC timezone
-func GetUTCTime() time.Time {
-	return time.Now().UTC()
-}
-
 // TelemetryMessage is a transient struct before being saved to the job queue.
 type TelemetryMessage struct {
 	CoopID    string
@@ -70,10 +65,18 @@ func SetupMQTTClient(store DataStore, sensorTypes map[string]int32, cfg MQTTConf
 				return
 			}
 
+			// GetJakartaTime returns current time in Asia/Jakarta timezone
+			jakartaLocation, err := time.LoadLocation("Asia/Jakarta")
+			if err != nil {
+				slog.Error("Failed to load Asia/Jakarta timezone, using UTC", "error", err)
+				jakartaLocation = time.UTC
+			}
+			jakartaTime := time.Now().In(jakartaLocation)
+
 			telemetry := TelemetryMessage{
 				CoopID:    coopID,
 				Data:      sensorData,
-				Timestamp: GetUTCTime(),
+				Timestamp: jakartaTime,
 			}
 
 			if err := store.Save(telemetry, sensorTypes); err != nil {

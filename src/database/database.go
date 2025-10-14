@@ -206,12 +206,9 @@ func batchInsert(pool *pgxpool.Pool, readings []SensorReading) error {
 		return nil
 	}
 
-	// Get current UTC time for created_at and updated_at
-	utcTime := GetUTCTime()
-
 	rows := make([][]interface{}, len(readings))
 	for i, r := range readings {
-		rows[i] = []interface{}{r.Value, r.SensorTypeID, r.CoopID, utcTime, utcTime}
+		rows[i] = []interface{}{r.Value, r.SensorTypeID, r.CoopID, r.Timestamp, r.Timestamp}
 	}
 
 	_, err := pool.CopyFrom(

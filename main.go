@@ -509,7 +509,14 @@ func SetupRouter(client mqtt.Client, redisClient *redis.Client, tokenAuth *jwtau
 			telemetry := broker.TelemetryMessage{
 				CoopID:    coopIDStr,
 				Data:      sensorData,
-				Timestamp: broker.GetUTCTime(),
+				Timestamp: func() time.Time {
+			jakartaLocation, err := time.LoadLocation("Asia/Jakarta")
+			if err != nil {
+				slog.Error("Failed to load Asia/Jakarta timezone, using UTC", "error", err)
+				return time.Now().UTC()
+			}
+			return time.Now().In(jakartaLocation)
+		}(),
 			}
 
 			// Load sensor types untuk validasi
