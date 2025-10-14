@@ -22,8 +22,14 @@ RUN go build -o /server -ldflags="-s -w" .
 # ---
 
 # Stage 2: Create a minimal final image for production
-# Memulai dari image 'scratch' yang benar-benar kosong untuk ukuran minimal dan keamanan maksimal
-FROM scratch
+# Memulai dari image alpine Linux yang ringan namun mendukung timezone
+FROM alpine:latest
+
+# Install timezone data untuk Asia/Jakarta
+RUN apk add --no-cache tzdata
+
+# Set default timezone ke Asia/Jakarta
+ENV TZ=Asia/Jakarta
 
 # Menyalin hanya file biner yang telah di-compile dari stage builder
 COPY --from=builder /server /server
