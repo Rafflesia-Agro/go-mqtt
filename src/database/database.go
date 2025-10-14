@@ -32,6 +32,16 @@ type SensorReading struct {
 	Timestamp    time.Time
 }
 
+// GetJakartaTime returns current time in Asia/Jakarta timezone
+func GetJakartaTime() time.Time {
+	jakartaLocation, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		slog.Error("Failed to load Asia/Jakarta timezone, using UTC", "error", err)
+		return time.Now().UTC()
+	}
+	return time.Now().In(jakartaLocation)
+}
+
 // DBConfig defines the required fields for DB connection.
 type DBConfig struct {
 	DBHost, DBPort, DBUsername, DBPassword, DBDatabase string
@@ -45,7 +55,7 @@ type PostgresStore struct {
 
 // NewPostgresStore initializes the database connection pool and the store.
 func NewPostgresStore(jobChan chan SensorReading, cfg DBConfig) (*PostgresStore, error) {
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=Asia/Jakarta",
 		cfg.DBHost,
 		cfg.DBPort,
 		cfg.DBUsername,
@@ -60,6 +70,11 @@ func NewPostgresStore(jobChan chan SensorReading, cfg DBConfig) (*PostgresStore,
 
 	if err := pool.Ping(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Set session timezone to Asia/Jakarta
+	if _, err := pool.Exec(context.Background(), "SET TIME ZONE 'Asia/Jakarta'"); err != nil {
+		return nil, fmt.Errorf("failed to set timezone: %w", err)
 	}
 
 	return &PostgresStore{Pool: pool, JobChan: jobChan}, nil
@@ -196,9 +211,12 @@ func batchInsert(pool *pgxpool.Pool, readings []SensorReading) error {
 		return nil
 	}
 
+	// Get current Jakarta time for created_at and updated_at
+	jakartaTime := GetJakartaTime()
+
 	rows := make([][]interface{}, len(readings))
 	for i, r := range readings {
-		rows[i] = []interface{}{r.Value, r.SensorTypeID, r.CoopID, r.Timestamp, r.Timestamp}
+		rows[i] = []interface{}{r.Value, r.SensorTypeID, r.CoopID, jakartaTime, jakartaTime}
 	}
 
 	_, err := pool.CopyFrom(
@@ -213,7 +231,7 @@ func batchInsert(pool *pgxpool.Pool, readings []SensorReading) error {
 		return err
 	}
 
-	slog.Info("Successfully inserted batch", "rows", len(readings))
+	slog.Info("Successfully inserted batch", "rows", len(readings), "timezone", "Asia/Jakarta")
 	return nil
 }
 
