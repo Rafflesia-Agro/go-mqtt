@@ -14,6 +14,7 @@ import (
 	"github.com/Anjasfedo/go-mqtt/src/broker"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 // Configuration constants for our batching workers (these are logical constants)
@@ -42,14 +43,15 @@ type DBConfig struct {
 	DBHost, DBPort, DBUsername, DBPassword, DBDatabase string
 }
 
-// PostgresStore holds the DB pool and the job channel.
+// PostgresStore holds the DB pool, Redis client, and the job channel.
 type PostgresStore struct {
-	Pool    *pgxpool.Pool
-	JobChan chan SensorReading
+	Pool       *pgxpool.Pool
+	Redis      *redis.Client
+	JobChan    chan SensorReading
 }
 
 // NewPostgresStore initializes the database connection pool and the store.
-func NewPostgresStore(jobChan chan SensorReading, cfg DBConfig) (*PostgresStore, error) {
+func NewPostgresStore(jobChan chan SensorReading, cfg DBConfig, redisClient *redis.Client) (*PostgresStore, error) {
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=Asia/Jakarta",
 		cfg.DBHost,
 		cfg.DBPort,
@@ -72,7 +74,7 @@ func NewPostgresStore(jobChan chan SensorReading, cfg DBConfig) (*PostgresStore,
 		return nil, fmt.Errorf("failed to set timezone: %w", err)
 	}
 
-	return &PostgresStore{Pool: pool, JobChan: jobChan}, nil
+	return &PostgresStore{Pool: pool, Redis: redisClient, JobChan: jobChan}, nil
 }
 
 // PERBAIKAN: struct TelemetryMessage dihapus dari sini
@@ -83,6 +85,14 @@ func (s *PostgresStore) Save(msg broker.TelemetryMessage, sensorTypes map[string
 	coopID, err := strconv.ParseInt(msg.CoopID, 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid coop_id format: %s", msg.CoopID)
+	}
+
+	// Store the last sensor data timestamp in Redis
+	key := fmt.Sprintf("last_sensor_stored_%s", msg.CoopID)
+	currentTime := msg.Timestamp.Format(time.RFC3339)
+	if err := s.Redis.Set(context.Background(), key, currentTime, 0).Err(); err != nil {
+		slog.Error("Failed to store last sensor timestamp", "error", err, "coop_id", msg.CoopID)
+		// Continue anyway since this is not critical for database storage
 	}
 
 	for key, val := range msg.Data {

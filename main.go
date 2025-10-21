@@ -193,7 +193,7 @@ func main() {
 		DBUsername: cfg.DBUsername,
 		DBPassword: cfg.DBPassword,
 		DBDatabase: cfg.DBDatabase,
-	})
+	}, redisClient)
 	if err != nil {
 		slog.Error("Failed to initialize data store", "error", err)
 		os.Exit(1)
@@ -382,6 +382,54 @@ func SetupRouter(client mqtt.Client, redisClient *redis.Client, tokenAuth *jwtau
 			})
 		})
 
+		r.Get("/coops/{id}/status", func(w http.ResponseWriter, r *http.Request) {
+			coopID := chi.URLParam(r, "id")
+
+			// Get the last sensor data timestamp from Redis
+			timestampKey := fmt.Sprintf("last_sensor_stored_%s", coopID)
+			lastSensorStored, err := redisClient.Get(r.Context(), timestampKey).Result()
+
+			isOnline := false
+			timeElapsed := ""
+			lastSeen := ""
+
+			if err == redis.Nil {
+				// No sensor data found
+				slog.Info("No sensor data found for coop", "coop_id", coopID)
+			} else if err != nil {
+				slog.Error("Failed to get last sensor timestamp", "error", err, "coop_id", coopID)
+				HTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to retrieve sensor status"))
+				return
+			} else {
+				// Parse the timestamp
+				lastSeenTime, err := time.Parse(time.RFC3339, lastSensorStored)
+				if err != nil {
+					slog.Error("Failed to parse last sensor timestamp", "error", err, "coop_id", coopID)
+					HTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to parse sensor timestamp"))
+					return
+				}
+
+				// Calculate if online based on 45-second threshold
+				timeSinceLastSeen := time.Since(lastSeenTime)
+				isOnline = timeSinceLastSeen <= 45*time.Second
+				timeElapsed = timeSinceLastSeen.String()
+				lastSeen = lastSensorStored
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"data": map[string]any{
+					"coop_id":     coopID,
+					"is_online":   isOnline,
+					"last_seen":   lastSeen,
+					"time_elapsed": timeElapsed,
+					"threshold_seconds": 45,
+				},
+			})
+		})
+
 		r.Post("/coops/{id}/state", func(w http.ResponseWriter, r *http.Request) {
 			coopID := chi.URLParam(r, "id")
 
@@ -509,7 +557,7 @@ func SetupRouter(client mqtt.Client, redisClient *redis.Client, tokenAuth *jwtau
 			r.Body = http.MaxBytesReader(w, r.Body, 1048576) // 1MB limit
 			decoder := json.NewDecoder(r.Body)
 
-			var sensorData map[string]interface{}
+			var sensorData map[string]any
 			if err := decoder.Decode(&sensorData); err != nil {
 				HTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid JSON payload: %w", err))
 				return

@@ -24,7 +24,7 @@ func GetJakartaTime() time.Time {
 // TelemetryMessage is a transient struct before being saved to the job queue.
 type TelemetryMessage struct {
 	CoopID    string
-	Data      map[string]interface{}
+	Data      map[string]any
 	Timestamp time.Time
 }
 
@@ -69,7 +69,7 @@ func SetupMQTTClient(store DataStore, sensorTypes map[string]int32, cfg MQTTConf
 			// DIUBAH: coopID sekarang berada di indeks 1
 			coopID := parts[1] // coops/[0] coopID/[1] telemetry/[2]
 
-			var sensorData map[string]interface{}
+			var sensorData map[string]any
 			if err := json.Unmarshal(msg.Payload(), &sensorData); err != nil {
 				slog.Error("Failed to unmarshal telemetry", "err", err, "topic", msg.Topic())
 				return
