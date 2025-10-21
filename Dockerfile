@@ -7,8 +7,7 @@ RUN apk add --no-cache tzdata
 # Set default timezone ke Asia/Jakarta
 ENV TZ=Asia/Jakarta
 
-# Copy server executable from root directory
-COPY server /server
+COPY . .
 
 # Expose port 21999, tempat aplikasi akan berjalan di dalam kontainer
 EXPOSE 21999
