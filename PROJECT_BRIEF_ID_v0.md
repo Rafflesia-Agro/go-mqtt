@@ -10,6 +10,14 @@
 
 ---
 
+## Riwayat Versi
+
+| Versi | Tanggal | Perubahan | Penulis |
+|-------|---------|-----------|--------|
+| **v0.0** | 2026-01-09 | **Proposal Asli**: Konfigurasi berbasis JSON<br>• Konsep awal dengan definisi file JSON<br>• Koneksi broker MQTT eksternal diperlukan<br>• PostgreSQL/MongoDB dapat dikonfigurasi via JSON<br>• Fokus pada kasus penggunaan farm telemetry<br>• Anggaran: $283,200<br>• Konfigurasi dan deployment manual<br>• Skema JSON untuk definisi pub/sub | Tim Pengembangan |
+
+---
+
 ## 1. Latar Belakang
 
 ### Kondisi Saat Ini

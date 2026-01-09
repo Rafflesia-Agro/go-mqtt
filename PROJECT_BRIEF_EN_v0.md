@@ -10,6 +10,14 @@
 
 ---
 
+## Version History
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| **v0.0** | 2026-01-09 | **Original Proposal**: JSON-based configuration<br>• Initial concept with JSON file definitions<br>• External MQTT broker connection required<br>• PostgreSQL/MongoDB configurable via JSON<br>• Focus on farm telemetry use case<br>• Budget: $283,200<br>• Manual configuration and deployment<br>• JSON schema for pub/sub definitions | Development Team |
+
+---
+
 ## 1. Background
 
 ### Current State
